@@ -125,9 +125,15 @@ final class LiveStream: @unchecked Sendable {
         }
     }
 
+    /// Asks ffmpeg to quit, and forces it if it hasn't gone within 2 seconds
+    /// (after the Mac sleeps, a stuck network read can ignore the polite request).
     func stop() {
-        if let p = process, p.isRunning { p.terminate() }
-        process = nil
+        guard let p = process, p.isRunning else { return }
+        p.terminate()
+        let pid = p.processIdentifier
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [p] in
+            if p.isRunning { Darwin.kill(pid, SIGKILL) }
+        }
     }
 
     /// Called when the app quits so no ffmpeg is left running.

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Network
 
 struct Camera: Identifiable, Hashable {
     let channel: Int      // NVR channel, starting at 0
@@ -76,6 +77,8 @@ final class CameraStore: ObservableObject {
     @Published var motion: [Int: Bool] = [:]          // something detected right now
     @Published var lastUpdate: Date?
     @Published var lastError: String?
+    /// When pictures stopped arriving because the NVR couldn't be reached (nil while all is well).
+    @Published var offlineSince: Date?
     @Published var selected: Int = 0 { didSet { updateStreams() } }
     @Published var showGrid = false { didSet { updateStreams() } }
     @Published var previewEvent: DetectionEvent? = nil { didSet { updateStreams() } }
@@ -197,6 +200,9 @@ final class CameraStore: ObservableObject {
     /// Channels whose camera is a doorbell (the NVR reports "visitor" support for them).
     @Published private(set) var doorbellChannels: Set<Int> = []
     private var monitorTick = 0
+    private let pathMonitor = NWPathMonitor()
+    private var networkWasUp: Bool?
+    private var reconnectTask: Task<Void, Never>?
     private var eventImageCache: [UUID: NSImage] = [:]
 
     private let session: URLSession = {
@@ -235,6 +241,20 @@ final class CameraStore: ObservableObject {
                                                object: nil, queue: nil) { _ in
             LiveStream.terminateAll()
         }
+        // After the Mac wakes up (or the screen is unlocked) the old connections are dead: start fresh.
+        let ws = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification,
+                     NSWorkspace.sessionDidBecomeActiveNotification] {
+            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.reconnect() }
+            }
+        }
+        // Same when the network comes back (Wi-Fi reconnecting, moving between networks).
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let up = path.status == .satisfied
+            Task { @MainActor in self?.networkChanged(up: up) }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "perch.network"))
         restartMonitor()
         if !camerasDetected && isConfigured {
             Task { _ = await self.detectCameras() }
@@ -351,6 +371,21 @@ final class CameraStore: ObservableObject {
         restartEverything()
         if !camerasDetected && isConfigured {
             Task { _ = await self.detectCameras() }
+        }
+    }
+
+    private func networkChanged(up: Bool) {
+        defer { networkWasUp = up }
+        if up && networkWasUp == false { reconnect() }
+    }
+
+    /// Drops every connection and starts again a moment later, once the network has settled.
+    func reconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.restartEverything()
         }
     }
 
@@ -535,12 +570,14 @@ final class CameraStore: ObservableObject {
                 if !isLive(channel) { images[channel] = image }
                 lastUpdate = Date()
                 lastError = nil
+                if offlineSince != nil { offlineSince = nil }
             } else {
                 lastError = "NVR refused the login"
             }
         } catch {
             if !(error is CancellationError) {
                 lastError = "Can't reach the NVR"
+                if offlineSince == nil { offlineSince = Date() }
             }
         }
     }
@@ -848,14 +885,20 @@ final class CameraStore: ObservableObject {
         }
     }
 
+    /// Any stream that hasn't sent a picture for 10 seconds is thrown away and started again.
     private func checkForStalledStreams() {
         let now = Date()
-        for stream in streams.values {
+        var dropped = false
+        for (key, stream) in Array(streams) {
             let since = stream.lastFrame ?? stream.startedAt
             if now.timeIntervalSince(since) > 10 {
-                stream.stop()   // its exit handler restarts it
+                stream.stop()
+                streams[key] = nil
+                frameAt[key] = nil
+                dropped = true
             }
         }
+        if dropped { updateStreams() }
     }
 
     // MARK: - Live video
@@ -915,6 +958,7 @@ final class CameraStore: ObservableObject {
         images[key.channel] = image
         lastUpdate = Date()
         lastError = nil
+        if offlineSince != nil { offlineSince = nil }
     }
 
     private func streamEnded(key: StreamKey, id: UUID, gotFrames: Bool) {

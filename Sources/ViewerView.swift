@@ -15,6 +15,7 @@ struct ViewerView: View {
             ZStack {
                 Color.black
                 content(size: geo.size)
+                offlineBanner
                 controls(size: geo.size)
                     .opacity(controlsVisible ? 1 : 0)
                     .animation(.easeInOut(duration: 0.25), value: controlsVisible)
@@ -32,6 +33,27 @@ struct ViewerView: View {
     }
 
     private var currentName: String { store.name(for: store.selected) }
+
+    /// Says so plainly when the cameras can't be reached, instead of showing old pictures as if they were live.
+    private var offlineBanner: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let since = store.offlineSince, context.date.timeIntervalSince(since) > 5 {
+                let last = (store.lastUpdate ?? since).formatted(date: .omitted, time: .shortened)
+                HStack(spacing: 8) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .foregroundStyle(Color(red: 1.0, green: 0.72, blue: 0.30))
+                    Text("Can't reach your cameras. Showing pictures from \(last). Trying again…")
+                }
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .glass(10)
+                .padding(.top, 62)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(false)
+            }
+        }
+    }
 
     // MARK: - Content
 
