@@ -35,6 +35,8 @@ Turn on:
 
 Save. HTTPS (443) and ONVIF are optional; Perch doesn't need them.
 
+Keep **RTSP on port 554**: Perch always uses that port for live video. If you've changed the **HTTP** port, that's fine; just add it to the address in Perch, e.g. `192.168.1.20:8080`.
+
 **Check it worked:** open `http://<NVR IP>` in Safari. You should see the Reolink login page.
 
 ## 3. Create a view-only user for Perch

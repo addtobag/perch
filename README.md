@@ -42,11 +42,22 @@
 - **Zoom, rotate, pin on top, snapshots**, and keyboard shortcuts for everything.
 - **Private by design** – Perch talks straight to your NVR. No cloud, no account, no tracking. Your password is kept in the macOS Keychain.
 
+## Quick start
+
+About 10 minutes, most of it waiting for downloads.
+
+1. **[Download Perch.dmg](../../releases/latest)** and drag Perch into Applications. → [details](#1-download-perch)
+2. **Install ffmpeg** for live video: `brew install ffmpeg`. → [no Homebrew yet?](#2-install-ffmpeg-for-live-video)
+3. **Switch on HTTP and RTSP** on your NVR and create a view-only user. → [NVR guide](docs/NVR-SETUP.md)
+4. **Open Perch**, enter the NVR's IP address and login, and you're done. → [details](#4-connect)
+
 ## Requirements
 
 - macOS 13 Ventura or later (Apple silicon or Intel)
-- A Reolink NVR (or a single Reolink camera) on the same network as your Mac
+- A Reolink NVR on the same network as your Mac. Wired Reolink cameras and doorbells used on their own should also work.
 - [Homebrew](https://brew.sh) and ffmpeg for live video (see step 2)
+
+Not supported: battery-powered Reolink cameras on their own (they sleep to save power and don't offer live streams), and cloud-only setups.
 
 ## Install
 
@@ -54,11 +65,11 @@
 
 Download **Perch.dmg** from the [latest release](../../releases/latest), open it and drag **Perch** into **Applications**.
 
-The first time you open it, macOS may say it can't verify the developer. If so:
+The first time you open it, macOS will say *"Apple could not verify 'Perch.app' is free of malware"*. That's because Perch isn't signed with a paid Apple developer certificate yet, not because anything is wrong. Click **Done** (not *Move to Bin*), then:
 
 1. Open **System Settings → Privacy & Security**.
-2. Scroll down and click **Open Anyway** next to the message about Perch.
-3. Confirm with **Open**. You only need to do this once.
+2. Scroll down to the **Security** section and click **Open Anyway** next to the message about Perch. (The button appears for about an hour after you first try to open the app. If it's not there, try opening Perch again.)
+3. Enter your Mac password and click **Open**. You only need to do this once.
 
 Prefer Terminal? This does the same thing:
 
@@ -86,7 +97,9 @@ brew install ffmpeg
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    ```
 
-2. When it finishes, it shows **Next steps**. On Apple silicon Macs (M1 and later) that's usually these two commands, which let Terminal find `brew`:
+   Press **Return** when asked to continue. When you type your password nothing appears on screen; that's normal. The first install can take 5–15 minutes.
+
+2. When it finishes, it shows **Next steps**. On Apple silicon Macs (M1 and later) that's usually these two commands, which let Terminal find `brew`. Intel Macs can skip this.
 
    ```bash
    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
@@ -113,12 +126,18 @@ Perch needs a few NVR settings switched on. **Full step-by-step guide: [docs/NVR
 
 ### 4. Connect
 
-Click the camera icon in the menu bar, then the **gear** icon:
+Open Perch. Its icon (a small circle with a line under it) appears in the **menu bar** at the top right of your screen. Click it, then the **gear** icon:
 
-1. Enter your NVR's IP address (e.g. `192.168.1.20`), the username and password.
+1. Enter your NVR's IP address (e.g. `192.168.1.20`), the username and password. If you changed the NVR's HTTP port, add it after a colon, e.g. `192.168.1.20:8080`.
 2. Click **Test connection**, then **Save**.
 
-Perch reads your camera list and names from the NVR automatically. If macOS asks to allow access to devices on your local network, click **Allow**.
+Perch reads your camera list and names from the NVR automatically.
+
+When macOS asks **"Allow Perch to find devices on local networks?"**, click **Allow**. Perch can't reach your NVR without it.
+
+**Can't see the menu bar icon?** On MacBooks with a notch, icons can get hidden when the menu bar is full. Click **Perch** in Applications or the Dock instead: that opens the camera window, and **Settings** is in the menu bar panel. A menu bar organiser such as [Ice](https://github.com/jordanbaird/Ice) also helps.
+
+**Tip:** turn on **Settings → General → Launch at login** so Perch is always there, ready to alert you.
 
 ## Using Perch
 
@@ -140,12 +159,39 @@ Scroll or pinch to zoom, drag to move around, double-click to reset.
 
 Perch connects directly to your NVR, so it works on your home network. To use it elsewhere, connect your Mac to home with a private VPN such as [Tailscale](https://tailscale.com) or WireGuard. Don't expose your NVR's ports to the internet.
 
+## Updating
+
+Download the new **Perch.dmg** from [Releases](../../releases/latest), quit Perch (menu bar icon → **Quit**), and drag the new version into Applications, choosing **Replace**. Your settings and cameras are kept.
+
+After an update you may need to click **Open Anyway** again (step 1), and macOS may ask whether Perch can use its saved password in your Keychain: click **Always Allow**.
+
+## Uninstalling
+
+1. Quit Perch and drag it from Applications to the Bin.
+2. To remove its data too, delete these folders: `~/Library/Application Support/Perch` and `~/Library/Logs/Perch`.
+3. Optionally, open **Keychain Access**, search for **Perch** and delete the saved password.
+
+## FAQ
+
+**Does Perch record?** No. Your NVR keeps recording as normal; Perch is for watching live and getting alerts.
+
+**Does it replace the Reolink app?** For watching and alerts on your Mac, yes. Use the Reolink app for playback of recordings and changing NVR settings.
+
+**Does it cost anything or send my data anywhere?** No and no. It's free, open source, and only talks to your NVR.
+
+**Will it work with more than four cameras?** Yes. Perch reads however many channels your NVR has.
+
 ## Troubleshooting
 
+- **"Can't reach the NVR"** – check the IP address, that your Mac is on the same network, and that Perch is allowed in **System Settings → Privacy & Security → Local Network**.
 - **Stuck on "CONNECTING"** – check RTSP is switched on in the NVR's port settings. ffmpeg's messages are logged to `~/Library/Logs/Perch/ffmpeg.log`.
 - **"NVR refused the login"** – check the username and password, and that the user is allowed to view live video.
 - **No detections** – person and vehicle alerts need cameras with Reolink's smart detection. For other cameras, turn on **Any motion** in Settings › Alerts.
 - **Date/time overlay won't change** – that setting changes the cameras themselves, so it needs a login that's allowed to change settings.
+
+## Feedback and help
+
+Found a bug or have an idea? [Open an issue](../../issues). Please include your Mac model, macOS version and NVR model.
 
 ## Build from source
 
