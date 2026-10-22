@@ -26,7 +26,7 @@ struct AlertView: View {
                     Text(event.kind.headline(at: store.name(for: event.channel)))
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
-                    Text("\(event.kind.label) detected")
+                    Text(event.kind.detail)
                         .font(.system(size: 12))
                         .foregroundStyle(Color(white: 0.78))
                 }
@@ -58,7 +58,9 @@ struct AlertView: View {
         .padding(12)
         .frame(width: 380)
         .background(Color(white: 0.11).opacity(0.97), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .strokeBorder(event.kind == .doorbell ? event.kind.color.opacity(0.7) : Color.white.opacity(0.12),
+                          lineWidth: event.kind == .doorbell ? 1.5 : 1))
         .environment(\.colorScheme, .dark)
     }
 }

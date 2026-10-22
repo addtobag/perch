@@ -1,10 +1,10 @@
 import SwiftUI
 import Foundation
 
-/// Something the NVR detected: a person, vehicle, animal or plain motion on a camera.
+/// Something the NVR detected: a doorbell press, a person, vehicle, animal or plain motion on a camera.
 struct DetectionEvent: Identifiable, Codable, Hashable {
     enum Kind: String, Codable, CaseIterable {
-        case person, vehicle, animal, motion
+        case person, vehicle, animal, motion, doorbell
 
         var label: String {
             switch self {
@@ -12,7 +12,23 @@ struct DetectionEvent: Identifiable, Codable, Hashable {
             case .vehicle: return "Vehicle"
             case .animal: return "Animal"
             case .motion: return "Motion"
+            case .doorbell: return "Doorbell"
             }
+        }
+
+        var plural: String {
+            switch self {
+            case .person: return "People"
+            case .vehicle: return "Vehicles"
+            case .animal: return "Animals"
+            case .motion: return "Motion"
+            case .doorbell: return "Doorbell"
+            }
+        }
+
+        /// The line under the headline on an alert.
+        var detail: String {
+            self == .doorbell ? "Doorbell pressed" : "\(label) detected"
         }
 
         var symbol: String {
@@ -21,6 +37,7 @@ struct DetectionEvent: Identifiable, Codable, Hashable {
             case .vehicle: return "car.fill"
             case .animal: return "pawprint.fill"
             case .motion: return "waveform.path"
+            case .doorbell: return "bell.fill"
             }
         }
 
@@ -30,6 +47,7 @@ struct DetectionEvent: Identifiable, Codable, Hashable {
             case .vehicle: return Color(red: 0.47, green: 0.74, blue: 1.0)
             case .animal: return Color(red: 0.52, green: 0.86, blue: 0.56)
             case .motion: return Color(white: 0.78)
+            case .doorbell: return Color(red: 1.0, green: 0.48, blue: 0.42)
             }
         }
 
@@ -39,6 +57,7 @@ struct DetectionEvent: Identifiable, Codable, Hashable {
             case .vehicle: return "Vehicle at \(place)"
             case .animal: return "Animal at \(place)"
             case .motion: return "Motion at \(place)"
+            case .doorbell: return "Doorbell rang at \(place)"
             }
         }
 
@@ -48,6 +67,7 @@ struct DetectionEvent: Identifiable, Codable, Hashable {
             case .vehicle: return "A vehicle at the \(place)"
             case .animal: return "An animal at the \(place)"
             case .motion: return "Movement at the \(place)"
+            case .doorbell: return "Someone's ringing at the \(place)"
             }
         }
     }

@@ -18,7 +18,7 @@ cp Info.plist "$APP/Contents/Info.plist"
 
 # Icons
 iconutil -c icns Resources/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
-cp Resources/MenuBarIcon.png Resources/MenuBarIcon@2x.png "$APP/Contents/Resources/"
+cp Resources/MenuBarIcon.png Resources/MenuBarIcon@2x.png Resources/Doorbell.wav "$APP/Contents/Resources/"
 
 echo "Compiling…"
 FLAGS=(-O -parse-as-library -swift-version 5)

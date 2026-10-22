@@ -175,6 +175,9 @@ struct SettingsView: View {
 
             Section("Alerts") {
                 Toggle("Show an alert when something is detected", isOn: $store.alertsEnabled)
+                Toggle("Doorbell presses (even when alerts are snoozed)", isOn: $store.alertDoorbell).disabled(!store.alertsEnabled)
+                Toggle("Open the mini player when the doorbell rings", isOn: $store.doorbellOpensMini)
+                    .disabled(!store.alertsEnabled || !store.alertDoorbell)
                 Toggle("People", isOn: $store.alertPeople).disabled(!store.alertsEnabled)
                 Toggle("Vehicles", isOn: $store.alertVehicles).disabled(!store.alertsEnabled)
                 Toggle("Animals", isOn: $store.alertAnimals).disabled(!store.alertsEnabled)

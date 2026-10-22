@@ -37,6 +37,7 @@
 - **Live view** – smooth live video, edge to edge, with controls that get out of the way.
 - **All cameras** – automatic, grid, one-large, side-by-side or stacked layouts; choose which cameras show and in what order.
 - **Alerts** – a card with a snapshot when someone or something is detected, and one click to watch live.
+- **Doorbell alerts** – when someone presses a Reolink video doorbell, Perch chimes, shows who it is and pops the doorbell camera up in the mini player. Comes through even when other alerts are snoozed.
 - **Mini player** – a small floating player that stays above your other apps.
 - **Today strip** – see when people and vehicles were detected today and jump to the snapshot.
 - **Zoom, rotate, pin on top, snapshots**, and keyboard shortcuts for everything.

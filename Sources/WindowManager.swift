@@ -149,13 +149,16 @@ final class WindowManager: NSObject, NSWindowDelegate {
             p.setFrameOrigin(NSPoint(x: screen.maxX - size.width - 12, y: screen.maxY - size.height - 12))
         }
         p.orderFrontRegardless()
-        if store.alertSound { NSSound(named: "Glass")?.play() }
+        if store.alertSound {
+            let sound = event.kind == .doorbell ? (NSSound(named: "Doorbell") ?? NSSound(named: "Glass")) : NSSound(named: "Glass")
+            sound?.play()
+        }
 
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in self?.dismissAlert() }
         }
         alertHide = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (event.kind == .doorbell ? 30 : 15), execute: work)
     }
 
     func dismissAlert() {

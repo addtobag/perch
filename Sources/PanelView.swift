@@ -128,6 +128,7 @@ struct PanelView: View {
         switch filter {
         case "People": return store.events.filter { $0.kind == .person }
         case "Vehicles": return store.events.filter { $0.kind == .vehicle }
+        case "Doorbell": return store.events.filter { $0.kind == .doorbell }
         default: return store.events
         }
     }
@@ -141,18 +142,21 @@ struct PanelView: View {
                     Text("All").tag("All")
                     Text("People").tag("People")
                     Text("Vehicles").tag("Vehicles")
+                    if !store.doorbellChannels.isEmpty || store.events.contains(where: { $0.kind == .doorbell }) {
+                        Text("Doorbell").tag("Doorbell")
+                    }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .controlSize(.small)
-                .frame(width: 200)
+                .frame(width: store.doorbellChannels.isEmpty ? 200 : 270)
             }
             .padding(.horizontal, 2)
             .padding(.bottom, 4)
 
             let list = Array(filtered.prefix(4))
             if list.isEmpty {
-                Text("Nothing yet. People and vehicles your cameras spot will appear here.")
+                Text(filter == "Doorbell" ? "No one has rung the doorbell yet." : "Nothing yet. People and vehicles your cameras spot will appear here.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)

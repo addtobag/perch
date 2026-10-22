@@ -67,6 +67,8 @@ final class CameraStore: ObservableObject {
     @Published var alertAnimals: Bool
     @Published var alertMotion: Bool
     @Published var alertSound: Bool
+    @Published var alertDoorbell: Bool
+    @Published var doorbellOpensMini: Bool
     @Published var snoozedUntil: Date?
 
     // MARK: View state
@@ -191,6 +193,10 @@ final class CameraStore: ObservableObject {
     private var lastEventAt: [String: Date] = [:]
     private var lastActiveAt: [String: Date] = [:]
     private var aiSupported: [Int: Bool] = [:]
+    private var eventsSupported: [Int: Bool] = [:]
+    /// Channels whose camera is a doorbell (the NVR reports "visitor" support for them).
+    @Published private(set) var doorbellChannels: Set<Int> = []
+    private var monitorTick = 0
     private var eventImageCache: [UUID: NSImage] = [:]
 
     private let session: URLSession = {
@@ -214,6 +220,8 @@ final class CameraStore: ObservableObject {
         alertAnimals = d.object(forKey: "alertAnimals") as? Bool ?? false
         alertMotion = d.object(forKey: "alertMotion") as? Bool ?? false
         alertSound = d.object(forKey: "alertSound") as? Bool ?? true
+        alertDoorbell = d.object(forKey: "alertDoorbell") as? Bool ?? true
+        doorbellOpensMini = d.object(forKey: "doorbellOpensMini") as? Bool ?? true
         snoozedUntil = nil
         password = Keychain.load(account: "nvr")
             ?? Keychain.load(account: "nvr", service: "ReolinkViewer")
@@ -337,6 +345,8 @@ final class CameraStore: ObservableObject {
         d.set(alertAnimals, forKey: "alertAnimals")
         d.set(alertMotion, forKey: "alertMotion")
         d.set(alertSound, forKey: "alertSound")
+        d.set(alertDoorbell, forKey: "alertDoorbell")
+        d.set(doorbellOpensMini, forKey: "doorbellOpensMini")
         Keychain.save(password, account: "nvr")
         restartEverything()
         if !camerasDetected && isConfigured {
@@ -349,6 +359,7 @@ final class CameraStore: ObservableObject {
         streams.removeAll()
         frameAt.removeAll()
         aiSupported.removeAll()
+        eventsSupported.removeAll()
         activeKinds.removeAll()
         restartPanelPolling()
         restartLivePolling()
@@ -454,12 +465,16 @@ final class CameraStore: ObservableObject {
     }
 
     private func shouldAlert(_ kind: DetectionEvent.Kind) -> Bool {
-        guard alertsEnabled, !isSnoozed else { return false }
+        guard alertsEnabled else { return false }
+        // A doorbell press still comes through while other alerts are snoozed.
+        if kind == .doorbell { return alertDoorbell }
+        guard !isSnoozed else { return false }
         switch kind {
         case .person: return alertPeople
         case .vehicle: return alertVehicles
         case .animal: return alertAnimals
         case .motion: return alertMotion
+        case .doorbell: return alertDoorbell
         }
     }
 
@@ -610,20 +625,37 @@ final class CameraStore: ObservableObject {
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                let cams = self.cameras
+                // A doorbell press only shows for a moment, so doorbells are checked
+                // twice a second; everything else once a second.
+                self.monitorTick += 1
+                let fullPass = self.monitorTick % 2 == 0
+                let cams = self.cameras.filter { fullPass || self.doorbellChannels.contains($0.channel) }
                 await withTaskGroup(of: Void.self) { group in
                     for cam in cams {
                         group.addTask { await self.pollDetections(channel: cam.channel) }
                     }
                 }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 500_000_000)
             }
         }
     }
 
     private func pollDetections(channel: Int) async {
         var current: Set<DetectionEvent.Kind>?
-        if aiSupported[channel] != false, let u = url(cmd: "GetAiState", channel: channel) {
+        // GetEvents reports everything at once, including doorbell presses ("visitor").
+        if eventsSupported[channel] != false, let u = url(cmd: "GetEvents", channel: channel) {
+            guard let result = try? await session.data(for: eventsRequest(u, channel: channel)) else { return }
+            if let parsed = Self.parseEvents(result.0) {
+                eventsSupported[channel] = true
+                if parsed.doorbell != doorbellChannels.contains(channel) {
+                    if parsed.doorbell { doorbellChannels.insert(channel) } else { doorbellChannels.remove(channel) }
+                }
+                current = parsed.kinds
+            } else {
+                eventsSupported[channel] = false
+            }
+        }
+        if current == nil, aiSupported[channel] != false, let u = url(cmd: "GetAiState", channel: channel) {
             guard let result = try? await session.data(from: u) else { return }
             if let parsed = Self.parseAiState(result.0) {
                 aiSupported[channel] = true
@@ -641,14 +673,15 @@ final class CameraStore: ObservableObject {
         guard let now = current else { return }
         let before = activeKinds[channel] ?? []
         activeKinds[channel] = now
-        motion[channel] = !now.isEmpty
+        motion[channel] = !now.subtracting([.doorbell]).isEmpty
         // Only count it as new if that kind of detection had been quiet for 90 seconds,
         // so a parked car or swaying tree flickering on and off doesn't flood the feed.
         let stamp = Date()
         var fresh: [DetectionEvent.Kind] = []
         for kind in now.subtracting(before) {
             let key = "\(channel)-\(kind.rawValue)"
-            if let seen = lastActiveAt[key], stamp.timeIntervalSince(seen) < 90 { continue }
+            let quiet: TimeInterval = kind == .doorbell ? 3 : 90
+            if let seen = lastActiveAt[key], stamp.timeIntervalSince(seen) < quiet { continue }
             fresh.append(kind)
         }
         for kind in now { lastActiveAt["\(channel)-\(kind.rawValue)"] = stamp }
@@ -674,6 +707,46 @@ final class CameraStore: ObservableObject {
         return found ? kinds : nil
     }
 
+    private func eventsRequest(_ url: URL, channel: Int) -> URLRequest {
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [[String: Any]] = [["cmd": "GetEvents", "action": 0, "param": ["channel": channel]]]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        return req
+    }
+
+    /// Reads a GetEvents reply: AI detections (or plain motion when the camera has no AI)
+    /// plus doorbell presses. Returns nil if the NVR doesn't understand GetEvents.
+    nonisolated static func parseEvents(_ data: Data) -> (kinds: Set<DetectionEvent.Kind>, doorbell: Bool)? {
+        guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let first = arr.first,
+              (first["code"] as? Int) == 0,
+              let value = first["value"] as? [String: Any] else { return nil }
+        func on(_ obj: Any?) -> (supported: Bool, active: Bool)? {
+            guard let o = obj as? [String: Any], let state = o["alarm_state"] as? Int else { return nil }
+            return ((o["support"] as? Int ?? 1) != 0, state == 1)
+        }
+        var kinds = Set<DetectionEvent.Kind>()
+        var hasAI = false
+        if let ai = value["ai"] as? [String: Any] {
+            let keys: [(String, DetectionEvent.Kind)] = [("people", .person), ("vehicle", .vehicle), ("dog_cat", .animal)]
+            for (key, kind) in keys {
+                guard let s = on(ai[key]), s.supported else { continue }
+                hasAI = true
+                if s.active { kinds.insert(kind) }
+            }
+        }
+        if !hasAI, let md = on(value["md"]), md.active { kinds.insert(.motion) }
+        var doorbell = false
+        if let v = on(value["visitor"]), v.supported {
+            doorbell = true
+            if v.active { kinds.insert(.doorbell) }
+        }
+        guard hasAI || value["md"] != nil || doorbell else { return nil }
+        return (kinds, doorbell)
+    }
+
     nonisolated static func parseMdState(_ data: Data) -> Bool? {
         guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
               let value = arr.first?["value"] as? [String: Any],
@@ -683,7 +756,8 @@ final class CameraStore: ObservableObject {
 
     private func recordEvent(channel: Int, kind: DetectionEvent.Kind) async {
         let key = "\(channel)-\(kind.rawValue)"
-        if let last = lastEventAt[key], Date().timeIntervalSince(last) < 45 { return }
+        let cooldown: TimeInterval = kind == .doorbell ? 15 : 45
+        if let last = lastEventAt[key], Date().timeIntervalSince(last) < cooldown { return }
         lastEventAt[key] = Date()
 
         let event = DetectionEvent(id: UUID(), channel: channel, kind: kind, date: Date())
@@ -702,6 +776,9 @@ final class CameraStore: ObservableObject {
 
         if shouldAlert(kind) {
             WindowManager.shared.showAlert(event: event, image: image)
+            if kind == .doorbell && doorbellOpensMini {
+                WindowManager.shared.showMini(channel: channel)
+            }
         }
     }
 

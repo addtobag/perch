@@ -479,6 +479,7 @@ struct ViewerView: View {
                     .foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 10) {
+                    if todays.contains(where: { $0.kind == .doorbell }) { legend(.doorbell) }
                     legend(.person)
                     legend(.vehicle)
                 }
@@ -492,7 +493,7 @@ struct ViewerView: View {
     private func legend(_ kind: DetectionEvent.Kind) -> some View {
         HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 2).fill(kind.color).frame(width: 8, height: 8)
-            Text(kind == .person ? "People" : "Vehicles")
+            Text(kind.plural)
         }
         .font(.system(size: 11))
         .foregroundStyle(.secondary)
