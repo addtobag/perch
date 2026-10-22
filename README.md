@@ -27,7 +27,7 @@
   </tr>
 </table>
 
-<sub>Screenshots use illustrated stand-in camera scenes.</sub>
+<sub>Camera pictures are shown as grey placeholders in these screenshots.</sub>
 
 ---
 
@@ -59,6 +59,14 @@ The first time you open it, macOS may say it can't verify the developer. If so:
 1. Open **System Settings → Privacy & Security**.
 2. Scroll down and click **Open Anyway** next to the message about Perch.
 3. Confirm with **Open**. You only need to do this once.
+
+Prefer Terminal? This does the same thing:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Perch.app
+```
+
+(Right-click → Open no longer skips this check on recent versions of macOS.)
 
 ### 2. Install ffmpeg (for live video)
 

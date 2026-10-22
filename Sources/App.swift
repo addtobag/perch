@@ -3,6 +3,7 @@ import AppKit
 
 @main
 struct PerchApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store: CameraStore
 
     init() {

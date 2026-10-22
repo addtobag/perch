@@ -189,6 +189,7 @@ struct SettingsView: View {
                     Text("5s").tag(5.0)
                 }
                 .pickerStyle(.segmented)
+                Toggle("Open the camera window when Perch is opened", isOn: $store.openViewerOnLaunch)
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { on in
                         do {

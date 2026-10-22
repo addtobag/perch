@@ -31,8 +31,12 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
     // MARK: Camera window
 
+    var hasViewer: Bool { viewer != nil }
+
     func showViewer(channel: Int? = nil, grid: Bool? = nil) {
         guard let store else { return }
+        // Behave like a normal app (Dock, ⌘-Tab) while the camera window is open.
+        NSApp.setActivationPolicy(.regular)
         if let channel { store.selected = channel }
         if let grid { store.showGrid = grid }
         if viewer == nil {
@@ -163,7 +167,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let w = notification.object as? NSWindow else { return }
-        if w === viewer { store?.setViewerVisible(false) }
+        if w === viewer {
+            store?.setViewerVisible(false)
+            // Back to living quietly in the menu bar.
+            NSApp.setActivationPolicy(.accessory)
+        }
         if w === mini { store?.setMiniVisible(false) }
     }
 }

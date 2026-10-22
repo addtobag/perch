@@ -111,6 +111,11 @@ final class CameraStore: ObservableObject {
     @Published var focusChannel: Int = UserDefaults.standard.object(forKey: "focusChannel") as? Int ?? 0 {
         didSet { UserDefaults.standard.set(focusChannel, forKey: "focusChannel") }
     }
+    /// Open the camera window when Perch is opened from the Dock, Finder or Launchpad.
+    @Published var openViewerOnLaunch: Bool = UserDefaults.standard.object(forKey: "openViewerOnLaunch") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(openViewerOnLaunch, forKey: "openViewerOnLaunch") }
+    }
+
     /// Video quality for one camera on its own, and for the all-cameras view.
     @Published var singleQuality = StreamQuality(rawValue: UserDefaults.standard.string(forKey: "singleQuality") ?? "") ?? .high {
         didSet {

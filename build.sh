@@ -32,7 +32,18 @@ else
   xcrun -sdk macosx swiftc "${FLAGS[@]}" -target "$(uname -m)-apple-macos13.0" -o "$APP/Contents/MacOS/Perch" Sources/*.swift
 fi
 
-codesign --force --sign - "$APP" >/dev/null
+# Sign with a stable identity if one exists, so macOS recognises each rebuild as the same app
+# (no new Keychain prompt after every build). Falls back to ad-hoc signing.
+SIGN_ID="${SIGN_ID:-}"
+if [ -z "$SIGN_ID" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "Perch Developer"; then
+  SIGN_ID="Perch Developer"
+fi
+if [ -n "$SIGN_ID" ]; then
+  codesign --force --sign "$SIGN_ID" "$APP" >/dev/null
+  echo "Signed with: $SIGN_ID"
+else
+  codesign --force --sign - "$APP" >/dev/null
+fi
 echo ""
 echo "Built: $(pwd)/$APP"
 echo "Open it with:  open \"$APP\""
