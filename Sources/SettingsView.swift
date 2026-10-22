@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var applyingOverlays = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var detectResult: String?
+    @State private var backupResult: String?
+    @State private var testingBackup = false
 
     var body: some View {
         Form {
@@ -185,6 +187,55 @@ struct SettingsView: View {
                 Toggle("Play a sound", isOn: $store.alertSound).disabled(!store.alertsEnabled)
             }
 
+            Section("Backups") {
+                Text("Save a full-resolution snapshot every time one of these happens:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 14) {
+                    ForEach([DetectionEvent.Kind.doorbell, .person, .vehicle, .animal, .motion], id: \.self) { kind in
+                        Toggle(kind.plural, isOn: backupBinding(kind))
+                            .toggleStyle(.checkbox)
+                    }
+                }
+                Toggle("Save to a folder", isOn: $store.backupToFolder)
+                if store.backupToFolder {
+                    HStack {
+                        Text(store.backupFolder.isEmpty ? "No folder chosen" : (store.backupFolder as NSString).abbreviatingWithTildeInPath)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(store.backupFolder.isEmpty ? Color.secondary : Color.primary)
+                        Spacer()
+                        Button("Choose…") { chooseBackupFolder() }
+                    }
+                    Text("Snapshots go into a folder for each day. A network drive (NAS) works too, once it's connected in Finder. If it's disconnected, Perch keeps the snapshots and copies them across when it's back.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Toggle("Send to a web address", isOn: $store.backupToWebhook)
+                if store.backupToWebhook {
+                    TextField("Web address", text: $store.backupWebhook, prompt: Text("https://example.com/upload"))
+                    SecureField("Token (optional)", text: $store.backupToken)
+                    Text("Perch sends a POST with the picture as \"snapshot\" plus event, camera, channel and time. A token is sent as \"Authorization: Bearer …\".")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text(backupResult ?? store.lastBackupStatus ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer()
+                    Button(testingBackup ? "Sending…" : "Send a test") {
+                        testingBackup = true
+                        Task {
+                            backupResult = await store.testBackup()
+                            testingBackup = false
+                        }
+                    }
+                    .disabled(testingBackup || !(store.backupToFolder || store.backupToWebhook))
+                }
+            }
+
             Section("General") {
                 Picker("Menu bar panel refresh", selection: $store.panelInterval) {
                     Text("1s").tag(1.0)
@@ -216,5 +267,23 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 560, height: 720)
+    }
+
+    private func backupBinding(_ kind: DetectionEvent.Kind) -> Binding<Bool> {
+        Binding(get: { store.backupKinds.contains(kind) },
+                set: { on in if on { store.backupKinds.insert(kind) } else { store.backupKinds.remove(kind) } })
+    }
+
+    private func chooseBackupFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use this folder"
+        panel.message = "Choose where Perch should save event snapshots"
+        if panel.runModal() == .OK, let url = panel.url {
+            store.backupFolder = url.path
+        }
     }
 }

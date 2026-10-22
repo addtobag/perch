@@ -38,6 +38,7 @@
 - **All cameras** – automatic, grid, one-large, side-by-side or stacked layouts; choose which cameras show and in what order.
 - **Alerts** – a card with a snapshot when someone or something is detected, and one click to watch live.
 - **Doorbell alerts** – when someone presses a Reolink video doorbell, Perch chimes, shows who it is and pops the doorbell camera up in the mini player. Comes through even when other alerts are snoozed.
+- **Snapshot backups** – save a full-resolution picture of every doorbell press or detection to a folder (a NAS works too), or send it to your own server.
 - **Mini player** – a small floating player that stays above your other apps.
 - **Today strip** – see when people and vehicles were detected today and jump to the snapshot.
 - **Zoom, rotate, pin on top, snapshots**, and keyboard shortcuts for everything.
@@ -118,6 +119,25 @@ When macOS asks **"Allow Perch to find devices on local networks?"**, click **Al
 | `Esc` | Back to live / close |
 
 Scroll or pinch to zoom, drag to move around, double-click to reset.
+
+## Snapshot backups
+
+Perch can keep a full-resolution JPEG of every event you choose (doorbell presses, people, vehicles, animals or motion). Turn it on in **Settings → Backups**, then pick where the pictures go. You can use one destination or both.
+
+- **A folder.** Snapshots are saved into a folder for each day, for example `2026-10-22/14.37.05 Front Door (Doorbell).jpg`. A network drive or NAS works once it's connected in Finder. If the drive is disconnected, Perch keeps the snapshots on your Mac and copies them across the next time it can.
+- **A web address.** Perch sends a `POST` (`multipart/form-data`) with these fields:
+
+  | Field | Example |
+  |---|---|
+  | `snapshot` | the JPEG file |
+  | `event` | `doorbell`, `person`, `vehicle`, `animal`, `motion` (or `test`) |
+  | `camera` | `Front Door` |
+  | `channel` | `3` |
+  | `time` | `2026-10-22T14:37:05+01:00` |
+
+  If you fill in a token, it's sent as `Authorization: Bearer <token>`. Perch tries 3 times if the server can't be reached. This works with automation tools such as n8n, Make, Node-RED or Home Assistant webhooks, or with your own API.
+
+Use **Send a test** to check your setup. Backups keep working while alerts are snoozed. They only happen while your Mac is awake and running Perch; for round-the-clock recording, use the NVR itself.
 
 ## Away from home
 

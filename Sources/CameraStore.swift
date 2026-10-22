@@ -70,6 +70,14 @@ final class CameraStore: ObservableObject {
     @Published var alertSound: Bool
     @Published var alertDoorbell: Bool
     @Published var doorbellOpensMini: Bool
+    // Backups: a full-resolution snapshot of chosen events, saved to a folder and/or sent to a web address
+    @Published var backupKinds: Set<DetectionEvent.Kind>
+    @Published var backupToFolder: Bool
+    @Published var backupFolder: String
+    @Published var backupToWebhook: Bool
+    @Published var backupWebhook: String
+    @Published var backupToken: String
+    @Published var lastBackupStatus: String? = nil
     @Published var snoozedUntil: Date?
 
     // MARK: View state
@@ -228,6 +236,16 @@ final class CameraStore: ObservableObject {
         alertSound = d.object(forKey: "alertSound") as? Bool ?? true
         alertDoorbell = d.object(forKey: "alertDoorbell") as? Bool ?? true
         doorbellOpensMini = d.object(forKey: "doorbellOpensMini") as? Bool ?? true
+        if let kinds = d.stringArray(forKey: "backupKinds") {
+            backupKinds = Set(kinds.compactMap(DetectionEvent.Kind.init(rawValue:)))
+        } else {
+            backupKinds = [.doorbell, .person]
+        }
+        backupToFolder = d.bool(forKey: "backupToFolder")
+        backupFolder = d.string(forKey: "backupFolder") ?? ""
+        backupToWebhook = d.bool(forKey: "backupToWebhook")
+        backupWebhook = d.string(forKey: "backupWebhook") ?? ""
+        backupToken = d.bool(forKey: "backupToWebhook") ? (Keychain.load(account: "webhook") ?? "") : ""
         snoozedUntil = nil
         password = Keychain.load(account: "nvr")
             ?? Keychain.load(account: "nvr", service: "ReolinkViewer")
@@ -367,6 +385,12 @@ final class CameraStore: ObservableObject {
         d.set(alertSound, forKey: "alertSound")
         d.set(alertDoorbell, forKey: "alertDoorbell")
         d.set(doorbellOpensMini, forKey: "doorbellOpensMini")
+        d.set(backupKinds.map(\.rawValue).sorted(), forKey: "backupKinds")
+        d.set(backupToFolder, forKey: "backupToFolder")
+        d.set(backupFolder, forKey: "backupFolder")
+        d.set(backupToWebhook, forKey: "backupToWebhook")
+        d.set(backupWebhook, forKey: "backupWebhook")
+        if backupToWebhook || !backupToken.isEmpty { Keychain.save(backupToken, account: "webhook") }
         Keychain.save(password, account: "nvr")
         restartEverything()
         if !camerasDetected && isConfigured {
@@ -799,12 +823,17 @@ final class CameraStore: ObservableObject {
 
         let event = DetectionEvent(id: UUID(), channel: channel, kind: kind, date: Date())
         var image: NSImage?
+        var snapData: Data?
         if let u = url(cmd: "Snap", channel: channel),
            let result = try? await session.data(from: u),
            let img = NSImage(data: result.0) {
             image = img
+            snapData = result.0
             eventImageCache[event.id] = img
             EventLog.saveImage(result.0, for: event.id)
+        }
+        if let jpeg = snapData, backupKinds.contains(kind) {
+            sendBackup(jpeg: jpeg, event: kind.rawValue, label: kind.label, channel: channel, date: event.date)
         }
         events.insert(event, at: 0)
         if events.count > 500 { events.removeLast(events.count - 500) }
@@ -817,6 +846,42 @@ final class CameraStore: ObservableObject {
                 WindowManager.shared.showMini(channel: channel)
             }
         }
+    }
+
+    // MARK: - Backups
+
+    private var backupDestinations: Backup.Destinations {
+        Backup.Destinations(folder: backupToFolder ? backupFolder : nil,
+                            webhook: backupToWebhook ? backupWebhook : nil,
+                            token: backupToken)
+    }
+
+    private func sendBackup(jpeg: Data, event: String, label: String, channel: Int, date: Date) {
+        let dest = backupDestinations
+        guard dest.folder != nil || dest.webhook != nil else { return }
+        let item = Backup.Item(jpeg: jpeg, event: event, eventLabel: label,
+                               camera: name(for: channel), channel: channel + 1, date: date)
+        // Backup.send runs off the main thread; only the status line comes back here.
+        Task { [weak self] in
+            let status = await Backup.send(item, to: dest)
+            self?.lastBackupStatus = status
+        }
+    }
+
+    /// Takes a full-resolution snapshot from the first camera and sends it to the chosen places.
+    func testBackup() async -> String {
+        guard let cam = cameras.first, let u = url(cmd: "Snap", channel: cam.channel) else {
+            return "Connect to your NVR first."
+        }
+        guard backupToFolder || backupToWebhook else { return "Switch on a folder or a web address first." }
+        guard let (data, _) = try? await session.data(from: u), NSImage(data: data) != nil else {
+            return "Couldn't get a snapshot from the NVR."
+        }
+        let item = Backup.Item(jpeg: data, event: "test", eventLabel: "Test", camera: cam.name,
+                               channel: cam.channel + 1, date: Date())
+        let status = await Backup.send(item, to: backupDestinations)
+        lastBackupStatus = status
+        return status
     }
 
     // MARK: - Visibility
