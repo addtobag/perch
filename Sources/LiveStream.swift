@@ -21,8 +21,12 @@ final class LiveStream: @unchecked Sendable {
     private static let registryLock = NSLock()
     private static var running: [UUID: Process] = [:]
 
-    /// Where Homebrew usually puts ffmpeg.
+    /// Perch's own bundled ffmpeg first, then Homebrew's.
     static var ffmpegPath: String? {
+        if let bundled = Bundle.main.url(forAuxiliaryExecutable: "ffmpeg")?.path,
+           FileManager.default.isExecutableFile(atPath: bundled) {
+            return bundled
+        }
         let candidates = [
             "/opt/homebrew/bin/ffmpeg",
             "/usr/local/bin/ffmpeg",

@@ -83,6 +83,6 @@ Perch then reads your list of cameras and their names from the NVR automatically
 | --- | --- |
 | "Can't reach the NVR" | Is your Mac on the same network as the NVR? Is the IP address right? Does `http://<NVR IP>` open in Safari? |
 | "NVR refused the login" | Username and password, and that the user is allowed to view live video. |
-| Stuck on "CONNECTING" | RTSP is switched on (step 2) and ffmpeg is installed. Details are logged in `~/Library/Logs/Perch/ffmpeg.log`. |
+| Stuck on "CONNECTING" | RTSP is switched on, on port 554 (step 2). Details are logged in `~/Library/Logs/Perch/ffmpeg.log`. |
 | No person/vehicle alerts | Smart detection is on for that camera (step 4), and alerts are on in Perch's settings. |
 | Works at home, not elsewhere | Expected: Perch connects directly to your NVR. Use a private VPN such as Tailscale to reach home. Don't open your NVR's ports to the internet. |

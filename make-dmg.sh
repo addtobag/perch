@@ -11,6 +11,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Shipped builds always include Perch's own ffmpeg.
+if [ ! -x Resources/ffmpeg/ffmpeg ]; then
+  bash build-ffmpeg.sh
+fi
+
 # Build a universal app so it runs on Intel Macs too.
 UNIVERSAL=1 bash build.sh
 
@@ -20,7 +25,8 @@ STAGE="build/dmg-stage"
 
 if [ -n "${DEVELOPER_ID:-}" ]; then
   echo "Signing with: $DEVELOPER_ID"
-  codesign --force --deep --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
+  codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP/Contents/MacOS/ffmpeg"
+  codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
 fi
 
 rm -rf "$STAGE" "$DMG"

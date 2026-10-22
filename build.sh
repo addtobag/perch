@@ -32,6 +32,15 @@ else
   xcrun -sdk macosx swiftc "${FLAGS[@]}" -target "$(uname -m)-apple-macos13.0" -o "$APP/Contents/MacOS/Perch" Sources/*.swift
 fi
 
+# Bundle Perch's own ffmpeg (built by build-ffmpeg.sh) so users don't need Homebrew.
+if [ -x Resources/ffmpeg/ffmpeg ]; then
+  cp Resources/ffmpeg/ffmpeg "$APP/Contents/MacOS/ffmpeg"
+  cp Resources/ffmpeg/COPYING.LGPLv2.1 "$APP/Contents/Resources/FFmpeg-LICENSE.txt"
+  echo "Bundled ffmpeg $(cat Resources/ffmpeg/VERSION 2>/dev/null)"
+else
+  echo "Note: no bundled ffmpeg (run: bash build-ffmpeg.sh). Perch will use Homebrew's if installed."
+fi
+
 # Sign with a stable identity if one exists, so macOS recognises each rebuild as the same app
 # (no new Keychain prompt after every build). Falls back to ad-hoc signing.
 SIGN_ID="${SIGN_ID:-}"
@@ -39,9 +48,11 @@ if [ -z "$SIGN_ID" ] && security find-identity -v -p codesigning 2>/dev/null | g
   SIGN_ID="Perch Developer"
 fi
 if [ -n "$SIGN_ID" ]; then
+  [ -f "$APP/Contents/MacOS/ffmpeg" ] && codesign --force --options runtime --sign "$SIGN_ID" "$APP/Contents/MacOS/ffmpeg" >/dev/null
   codesign --force --sign "$SIGN_ID" "$APP" >/dev/null
   echo "Signed with: $SIGN_ID"
 else
+  [ -f "$APP/Contents/MacOS/ffmpeg" ] && codesign --force --sign - "$APP/Contents/MacOS/ffmpeg" >/dev/null
   codesign --force --sign - "$APP" >/dev/null
 fi
 echo ""
