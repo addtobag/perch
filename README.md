@@ -6,6 +6,29 @@
 
 <p align="center">A clean, fast macOS app for the cameras on your NVR.<br>Works with Reolink NVRs and cameras, entirely on your home network.</p>
 
+<p align="center">
+  <img src="docs/screenshots/live.png" alt="Perch live view">
+</p>
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/grid.png" alt="All cameras"></td>
+    <td><img src="docs/screenshots/panel.png" alt="Menu bar panel with activity"></td>
+  </tr>
+  <tr>
+    <td align="center">All cameras, with the latest detection on each</td>
+    <td align="center">The menu bar panel: cameras at a glance and recent activity</td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/alert.png" alt="Alert card and floating mini player"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">An alert when someone's detected, and the floating mini player</td>
+  </tr>
+</table>
+
+<sub>Screenshots use illustrated stand-in camera scenes.</sub>
+
 ---
 
 ## What it does
@@ -39,20 +62,46 @@ The first time you open it, macOS may say it can't verify the developer. If so:
 
 ### 2. Install ffmpeg (for live video)
 
-Perch uses ffmpeg to play your cameras' live streams smoothly. In Terminal:
+Perch uses [ffmpeg](https://ffmpeg.org), a free video tool, to play your cameras' live streams smoothly. The easiest way to install it is with [Homebrew](https://brew.sh). Open **Terminal** (Applications › Utilities › Terminal) and follow the steps below.
+
+**Already have Homebrew?** (Type `brew --version`. If it prints a version number, you do.) Just run:
 
 ```bash
 brew install ffmpeg
 ```
 
-Without it Perch still works, but shows frequently refreshed snapshots instead of live video.
+**Don't have Homebrew yet?**
+
+1. Install it (it may ask for your Mac password, and to install Apple's Command Line Tools: say yes):
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+2. When it finishes, it shows **Next steps**. On Apple silicon Macs (M1 and later) that's usually these two commands, which let Terminal find `brew`:
+
+   ```bash
+   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+   eval "$(/opt/homebrew/bin/brew shellenv)"
+   ```
+
+3. Check it worked with `brew --version`, then install ffmpeg:
+
+   ```bash
+   brew install ffmpeg
+   ```
+
+Perch finds ffmpeg automatically; there's nothing else to set up. Without ffmpeg Perch still works, but shows frequently refreshed snapshots instead of live video.
 
 ### 3. Prepare your NVR (once)
 
-In the Reolink app or the NVR's web page:
+Perch needs a few NVR settings switched on. **Full step-by-step guide: [docs/NVR-SETUP.md](docs/NVR-SETUP.md).** In short:
 
-- **Network → Advanced → Port settings**: switch on **HTTP** (port 80) and **RTSP** (port 554).
-- **User management**: create a **view-only user** for Perch, so your admin password never sits on your Mac.
+1. **Find the NVR's IP address**, and ideally reserve it in your router so it doesn't change.
+2. **Switch on HTTP (port 80) and RTSP (port 554)** under Network › Advanced › Server Settings / Port Settings.
+3. **Create a view-only user** for Perch (permission level *User* or *Guest*, not Administrator).
+4. **Check smart detection is on** for your cameras (Person / Vehicle), for alerts.
+5. *Optional:* set each camera's **I-frame interval to 1x** for faster switching to full quality.
 
 ### 4. Connect
 
