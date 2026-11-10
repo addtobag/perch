@@ -110,7 +110,10 @@ final class CameraStore: ObservableObject {
         didSet { UserDefaults.standard.set(gridOrder, forKey: "gridOrder") }
     }
     @Published var gridHidden: [Int] = (UserDefaults.standard.array(forKey: "gridHidden") as? [Int]) ?? [] {
-        didSet { UserDefaults.standard.set(gridHidden, forKey: "gridHidden") }
+        didSet {
+            UserDefaults.standard.set(gridHidden, forKey: "gridHidden")
+            updateStreams()
+        }
     }
     @Published var gridSpacing: Double = UserDefaults.standard.object(forKey: "gridSpacing") as? Double ?? 2 {
         didSet { UserDefaults.standard.set(gridSpacing, forKey: "gridSpacing") }
@@ -199,12 +202,22 @@ final class CameraStore: ObservableObject {
     private var streams: [StreamKey: LiveStream] = [:]
     private var frameAt: [StreamKey: Date] = [:]
     private var pathVariant: [Int: Int] = [:]
+    /// Back-to-back starts of a stream that gave no pictures, for backing off retries.
+    private var failedStarts: [StreamKey: Int] = [:]
+    private var pendingImages: [Int: NSImage] = [:]
+    private var flushScheduled = false
+    private var lastFlushAt = Date.distantPast
 
     private var activeKinds: [Int: Set<DetectionEvent.Kind>] = [:]
     private var lastEventAt: [String: Date] = [:]
     private var lastActiveAt: [String: Date] = [:]
     private var aiSupported: [Int: Bool] = [:]
     private var eventsSupported: [Int: Bool] = [:]
+    /// One NVR login, reused for every request. Sending the username and password each time makes
+    /// the NVR log in afresh every time, and it can only hold so many logins before it stops answering.
+    private var apiToken: String?
+    private var tokenExpiry = Date.distantPast
+    private var loggingIn = false
     /// Channels whose camera is a doorbell (the NVR reports "visitor" support for them).
     @Published private(set) var doorbellChannels: Set<Int> = []
     private var monitorTick = 0
@@ -414,6 +427,7 @@ final class CameraStore: ObservableObject {
     }
 
     private func restartEverything() {
+        apiToken = nil   // the address or login may have changed
         for s in streams.values { s.stop() }
         streams.removeAll()
         frameAt.removeAll()
@@ -559,11 +573,56 @@ final class CameraStore: ObservableObject {
         c.percentEncodedQueryItems = [
             URLQueryItem(name: "cmd", value: enc(cmd)),
             URLQueryItem(name: "channel", value: String(channel)),
-            URLQueryItem(name: "rs", value: String(Int.random(in: 100000...999999))),
-            URLQueryItem(name: "user", value: enc(username)),
-            URLQueryItem(name: "password", value: enc(password))
-        ]
+            URLQueryItem(name: "rs", value: String(Int.random(in: 100000...999999)))
+        ] + authItems
         return c.url
+    }
+
+    /// The token when we have one, otherwise the username and password.
+    private var authItems: [URLQueryItem] {
+        if let t = apiToken, tokenExpiry > Date() { return [URLQueryItem(name: "token", value: enc(t))] }
+        return [URLQueryItem(name: "user", value: enc(username)), URLQueryItem(name: "password", value: enc(password))]
+    }
+
+    /// Logs in once (if needed) and keeps the token until shortly before it runs out.
+    func ensureLogin() async {
+        guard isConfigured, !loggingIn else { return }
+        if apiToken != nil, tokenExpiry > Date() { return }
+        guard let hp = hostParts else { return }
+        loggingIn = true
+        defer { loggingIn = false }
+        var c = URLComponents()
+        c.scheme = "http"
+        c.host = hp.host
+        c.port = hp.port
+        c.path = "/cgi-bin/api.cgi"
+        c.percentEncodedQueryItems = [URLQueryItem(name: "cmd", value: "Login")]
+        guard let u = c.url else { return }
+        var request = URLRequest(url: u)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let user: [String: Any] = ["Version": "0", "userName": username, "password": password]
+        let body: [[String: Any]] = [["cmd": "Login", "param": ["User": user]]]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let result = try? await session.data(for: request),
+              let arr = try? JSONSerialization.jsonObject(with: result.0) as? [[String: Any]],
+              let first = arr.first, (first["code"] as? Int) == 0,
+              let value = first["value"] as? [String: Any],
+              let token = value["Token"] as? [String: Any],
+              let name = token["name"] as? String else { return }
+        let lease = token["leaseTime"] as? Int ?? 3600
+        apiToken = name
+        tokenExpiry = Date().addingTimeInterval(TimeInterval(max(60, lease - 300)))
+    }
+
+    /// The NVR answered "please log in first" (it restarted, or the token expired).
+    nonisolated static func isLoginError(_ data: Data) -> Bool {
+        guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let first = arr.first, let code = first["code"] as? Int, code != 0,
+              let error = first["error"] as? [String: Any] else { return false }
+        let rsp = error["rspCode"] as? Int ?? 0
+        let detail = (error["detail"] as? String ?? "").lowercased()
+        return rsp == -6 || detail.contains("login") || detail.contains("token")
     }
 
     private static let pathStyles = ["Preview_%02d_%@", "h265Preview_%02d_%@", "h264Preview_%02d_%@"]
@@ -596,6 +655,7 @@ final class CameraStore: ObservableObject {
                 lastError = nil
                 if offlineSince != nil { offlineSince = nil }
             } else {
+                if apiToken != nil { apiToken = nil }   // log in again; only a real refusal if that fails too
                 lastError = "NVR refused the login"
             }
         } catch {
@@ -628,10 +688,8 @@ final class CameraStore: ObservableObject {
         c.port = hp.port
         c.path = "/cgi-bin/api.cgi"
         c.percentEncodedQueryItems = [
-            URLQueryItem(name: "cmd", value: enc(cmd)),
-            URLQueryItem(name: "user", value: enc(username)),
-            URLQueryItem(name: "password", value: enc(password))
-        ]
+            URLQueryItem(name: "cmd", value: enc(cmd))
+        ] + authItems
         guard let u = c.url else { return nil }
         var request = URLRequest(url: u)
         request.httpMethod = "POST"
@@ -686,6 +744,7 @@ final class CameraStore: ObservableObject {
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+                await self.ensureLogin()
                 // A doorbell press only shows for a moment, so doorbells are checked
                 // twice a second; everything else once a second.
                 self.monitorTick += 1
@@ -706,6 +765,7 @@ final class CameraStore: ObservableObject {
         // GetEvents reports everything at once, including doorbell presses ("visitor").
         if eventsSupported[channel] != false, let u = url(cmd: "GetEvents", channel: channel) {
             guard let result = try? await session.data(for: eventsRequest(u, channel: channel)) else { return }
+            if Self.isLoginError(result.0) { apiToken = nil; return }
             if let parsed = Self.parseEvents(result.0) {
                 eventsSupported[channel] = true
                 if parsed.doorbell != doorbellChannels.contains(channel) {
@@ -907,6 +967,7 @@ final class CameraStore: ObservableObject {
         panelTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+                await self.ensureLogin()
                 let cams = self.cameras
                 await withTaskGroup(of: Void.self) { group in
                     for cam in cams {
@@ -935,6 +996,7 @@ final class CameraStore: ObservableObject {
         liveTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+                await self.ensureLogin()
                 self.checkForStalledStreams()
                 // Fill in with snapshots wherever live video isn't (yet) arriving.
                 let needSnapshots = self.visibleChannels.filter { !self.isLive($0) }
@@ -1015,15 +1077,50 @@ final class CameraStore: ObservableObject {
             streams[key] = stream
             stream.start()
         }
+        // Sub streams for cameras that aren't on screen keep running so switching is instant,
+        // but only one picture a second from them is decoded.
+        var onScreen: Set<Int> = []
+        if viewerOpen {
+            if showGrid { onScreen.formUnion(gridCameras.map(\.channel)) } else { onScreen.insert(selected) }
+        }
+        if miniOpen { onScreen.insert(miniChannel) }
+        for (key, stream) in streams {
+            stream.minInterval = key.main || onScreen.contains(key.channel) ? 0 : 1
+        }
     }
 
     private func receive(_ image: NSImage, from key: StreamKey) {
         frameAt[key] = Date()
         if !key.main && isFresh(StreamKey(channel: key.channel, main: true)) { return }
-        images[key.channel] = image
-        lastUpdate = Date()
-        lastError = nil
+        pendingImages[key.channel] = image
+        scheduleImageFlush()
+        // Each assignment below redraws every open window, so only touch them when they change.
+        let now = Date()
+        if lastUpdate.map({ now.timeIntervalSince($0) >= 5 }) ?? true { lastUpdate = now }
+        if lastError != nil { lastError = nil }
         if offlineSince != nil { offlineSince = nil }
+    }
+
+    /// New video pictures are collected and handed to the windows together, at most 20 times a
+    /// second. Cameras send pictures at their own moments, so applying each as it came meant a
+    /// full window redraw for every single one (60+ a second with four cameras).
+    private func scheduleImageFlush() {
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        let wait = max(0, 0.05 - Date().timeIntervalSince(lastFlushAt))
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            Task { @MainActor in self?.flushImages() }
+        }
+    }
+
+    private func flushImages() {
+        flushScheduled = false
+        lastFlushAt = Date()
+        guard !pendingImages.isEmpty else { return }
+        var updated = images
+        updated.merge(pendingImages) { _, new in new }
+        pendingImages.removeAll()
+        images = updated   // one change, one redraw
     }
 
     private func streamEnded(key: StreamKey, id: UUID, gotFrames: Bool) {
@@ -1031,7 +1128,12 @@ final class CameraStore: ObservableObject {
         streams[key] = nil
         frameAt[key] = nil
         if !gotFrames && !key.main { pathVariant[key.channel, default: 0] += 1 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+        // A stream that keeps failing is retried less and less often (2s, 4s, 8s ... up to a
+        // minute) instead of starting a new ffmpeg every 2 seconds forever.
+        let failures = gotFrames ? 0 : failedStarts[key, default: 0] + 1
+        failedStarts[key] = failures
+        let delay = min(60, 2 * pow(2, Double(max(0, failures - 1))))
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             Task { @MainActor in self?.updateStreams() }
         }
     }

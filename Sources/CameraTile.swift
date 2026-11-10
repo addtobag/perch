@@ -1,5 +1,37 @@
 import SwiftUI
 import AppKit
+import CoreImage
+
+/// The soft blurred picture behind a camera shown in "fit" mode.
+/// Blurring the full-size video live on every frame is very expensive for the Mac's window
+/// compositor, so instead a tiny, already-blurred copy is made at most every couple of seconds
+/// and simply stretched to fill the space.
+@MainActor
+enum Backdrop {
+    private static var cache: [String: (image: NSImage, madeAt: Date)] = [:]
+    private static let context = CIContext(options: [.cacheIntermediates: false])
+
+    static func image(for source: NSImage, key: String) -> NSImage? {
+        let now = Date()
+        if let hit = cache[key], now.timeIntervalSince(hit.madeAt) < 2 { return hit.image }
+        guard let made = make(from: source) else { return cache[key]?.image }
+        cache[key] = (made, now)
+        return made
+    }
+
+    private static func make(from source: NSImage) -> NSImage? {
+        guard let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              cg.width > 0, cg.height > 0 else { return nil }
+        let w = 64.0, h = max(1, (w * Double(cg.height) / Double(cg.width)).rounded())
+        let small = CIImage(cgImage: cg)
+            .transformed(by: CGAffineTransform(scaleX: w / Double(cg.width), y: h / Double(cg.height)))
+        let blurred = small.clampedToExtent()
+            .applyingGaussianBlur(sigma: 2.5)
+            .cropped(to: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let out = context.createCGImage(blurred, from: blurred.extent) else { return nil }
+        return NSImage(cgImage: out, size: NSSize(width: w, height: h))
+    }
+}
 
 /// Draws a frame rotated by 0/90/180/270 degrees, filling or fitting the space it's given.
 struct RotatedImage: View {
@@ -44,6 +76,8 @@ struct CameraTile: View {
     var rotation = 0
     var zoom: CGFloat = 1
     var pan: CGSize = .zero
+    /// Identifies the picture for the blurred backdrop cache (defaults to the camera's channel).
+    var backdropKey: String? = nil
 
     var body: some View {
         if let aspect {
@@ -58,9 +92,9 @@ struct CameraTile: View {
             .overlay {
                 if let image {
                     ZStack {
-                        if blurBackground && !fill {
-                            RotatedImage(image: image, rotation: rotation, fill: true)
-                                .blur(radius: 40)
+                        if blurBackground && !fill,
+                           let backdrop = Backdrop.image(for: image, key: backdropKey ?? "ch\(camera.channel)") {
+                            RotatedImage(image: backdrop, rotation: rotation, fill: true)
                                 .opacity(0.5)
                         }
                         RotatedImage(image: image, rotation: rotation, fill: fill)

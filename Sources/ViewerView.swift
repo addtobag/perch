@@ -102,7 +102,8 @@ struct ViewerView: View {
                            fill: false,
                            blurBackground: true,
                            showLabel: false,
-                           rotation: store.rotation(for: event.channel))
+                           rotation: store.rotation(for: event.channel),
+                           backdropKey: "event-\(event.id)")
             } else {
                 Text("No snapshot was saved for this event")
                     .font(.system(size: 13))

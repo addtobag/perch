@@ -19,7 +19,7 @@ if [ ! -f "$TARBALL" ]; then
   curl -fL --progress-bar -o "$TARBALL" "https://ffmpeg.org/releases/$TARBALL"
 fi
 
-# Only what Perch uses: RTSP in, H.264/H.265 decode (hardware via VideoToolbox), MJPEG frames out.
+# Only what Perch uses: RTSP in, H.264/H.265 decode (hardware via VideoToolbox), MJPEG or raw y4m frames out.
 COMMON=(
   --disable-everything --disable-autodetect --disable-doc --disable-debug
   --disable-ffplay --disable-ffprobe --enable-ffmpeg
@@ -29,8 +29,8 @@ COMMON=(
   --enable-decoder=h264,hevc
   --enable-parser=h264,hevc
   --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox
-  --enable-encoder=mjpeg
-  --enable-muxer=image2pipe,mjpeg
+  --enable-encoder=mjpeg,wrapped_avframe,rawvideo
+  --enable-muxer=image2pipe,mjpeg,yuv4mpegpipe
   --enable-filter=buffer,buffersink,format,fps,null,scale,copy
   --enable-swscale
 )
