@@ -63,22 +63,6 @@ final class LiveStream: @unchecked Sendable {
         return String(decoding: data, as: UTF8.self).contains("yuv4mpegpipe")
     }()
 
-    /// ~/Library/Logs/Perch/ffmpeg.log. Once it passes 10 MB it becomes ffmpeg.old.log
-    /// (replacing the previous one) and a fresh log starts, so it can never fill the disk.
-    static var logURL: URL {
-        let fm = FileManager.default
-        let logs = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Logs/Perch", isDirectory: true)
-        try? fm.createDirectory(at: logs, withIntermediateDirectories: true)
-        let url = logs.appendingPathComponent("ffmpeg.log")
-        if let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int, size > 10_000_000 {
-            let old = logs.appendingPathComponent("ffmpeg.old.log")
-            try? fm.removeItem(at: old)
-            try? fm.moveItem(at: url, to: old)
-        }
-        return url
-    }
-
     init(id: UUID = UUID(), url: String, isMain: Bool, width: Int, fps: Int,
          onFrame: @escaping @MainActor @Sendable (NSImage) -> Void,
          onExit: @escaping @MainActor @Sendable (Bool) -> Void) {
@@ -131,19 +115,21 @@ final class LiveStream: @unchecked Sendable {
         let pipe = Pipe()
         p.standardOutput = pipe
 
-        // Keep ffmpeg's messages in a log file so problems can be diagnosed.
-        let logURL = LiveStream.logURL
-        if !FileManager.default.fileExists(atPath: logURL.path) {
-            FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        }
-        if let log = try? FileHandle(forWritingTo: logURL) {
-            log.seekToEndOfFile()
-            let label = (url.components(separatedBy: "/").last ?? "stream")
-            let header = "\n--- \(Date()) starting \(label)\n"
-            log.write(Data(header.utf8))
-            p.standardError = log
-        } else {
-            p.standardError = FileHandle.nullDevice
+        // ffmpeg's messages come back to us and go into Perch's log (see FFmpegLog), rather than
+        // ffmpeg writing to the file itself.
+        let label = (url.components(separatedBy: "/").last ?? "stream")
+        FFmpegLog.shared.note("\n--- \(Date()) starting \(label)")
+        let errors = Pipe()
+        let errorLog = FFmpegLog.Stream(label: label)
+        p.standardError = errors
+        errors.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+                errorLog.finish()
+            } else {
+                errorLog.consume(chunk)
+            }
         }
 
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in

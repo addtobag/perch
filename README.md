@@ -168,7 +168,7 @@ After an update you may need to click **Open Anyway** again (step 1), and macOS 
 ## Troubleshooting
 
 - **"Can't reach the NVR"** – check the IP address, that your Mac is on the same network, and that Perch is allowed in **System Settings → Privacy & Security → Local Network**.
-- **Stuck on "CONNECTING"** – check RTSP is switched on (port 554) in the NVR's port settings. Video messages are logged to `~/Library/Logs/Perch/ffmpeg.log`.
+- **Stuck on "CONNECTING"** – check RTSP is switched on (port 554) in the NVR's port settings. Video messages are logged to `~/Library/Logs/Perch/ffmpeg.log` (kept under 5 MB, with the previous one in `ffmpeg.old.log`; repeated messages are counted rather than written out, and camera passwords are hidden).
 - **"NVR refused the login"** – check the username and password, and that the user is allowed to view live video.
 - **No detections** – person and vehicle alerts need cameras with Reolink's smart detection. For other cameras, turn on **Any motion** in Settings › Alerts.
 - **Date/time overlay won't change** – that setting changes the cameras themselves, so it needs a login that's allowed to change settings.
